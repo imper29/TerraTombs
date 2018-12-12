@@ -1,0 +1,3 @@
+//This is a comment (must be on its own line)
+//The next line is a localization declaration. It will say 'item.apple' should be localized to 'Apple'
+item.apple=Apple
