@@ -1,4 +1,14 @@
-﻿namespace Maps
+﻿//Uncomment the #define DEBUGGING to enable debug logs.
+//#define DEBUGGING
+
+using System.Collections.Generic;
+using System.IO;
+using Utils.Collections;
+#if DEBUGGING
+using UnityEngine;
+#endif
+
+namespace Maps
 {
     /// <summary>
     /// A square area that contains a bunch of tiles.
@@ -18,6 +28,10 @@
         /// The tiles in this region.
         /// </summary>
         private readonly TileStack[,] tiles;
+        /// <summary>
+        /// The tile entities in this region.
+        /// </summary>
+        private readonly Dictionary<TilePosition2D, ITileEntity2D> tileEntities;
 
 
         /// <summary>
@@ -29,6 +43,7 @@
             this.map = map;
             this.position = position;
             tiles = new TileStack[RegionPosition2D.REGION_SIZE, RegionPosition2D.REGION_SIZE];
+            tileEntities = new Dictionary<TilePosition2D, ITileEntity2D>();
         }
 
 
@@ -41,6 +56,14 @@
             return map;
         }
         /// <summary>
+        /// Gets the position of this region.
+        /// </summary>
+        /// <returns>The position of this region.</returns>
+        public RegionPosition2D GetPosition()
+        {
+            return position;
+        }
+        /// <summary>
         /// Gets the 2D array containing all the tiles.
         /// </summary>
         /// <returns>The 2D array containing all the tiles.</returns>
@@ -49,21 +72,23 @@
             return tiles;
         }
         /// <summary>
-        /// Gets the position of this region.
+        /// Gets the entire tilestack at localTilePosition.
         /// </summary>
-        /// <returns>The position of this region.</returns>
-        public RegionPosition2D GetPosition()
+        /// <param name="localTilePosition">The position of the tilestack to get.</param>
+        /// <returns>The entire tilestack at localTilePosition.</returns>
+        public TileStack GetTileStack(TilePosition2D localTilePosition)
         {
-            return position;
+            return tiles[localTilePosition.x, localTilePosition.z];
         }
 
+
         /// <summary>
-        /// Places a ground tile at globalTilePosition.
+        /// Places a ground tile at localTilePosition.
         /// If a ground tile already exists in that position, the ground tile is first removed.
         /// </summary>
         /// <param name="localTilePosition">Where to place the ground tile.</param>
         /// <param name="tile">The ground tile to place.</param>
-        public void PlaceGround(TilePosition2D localTilePosition, ITileGround2D tile)
+        public void PlaceGround(TilePosition2D localTilePosition, TileGround2D tile)
         {
             //Remove the existing tile.
             if (tiles[localTilePosition.x, localTilePosition.z].ground != null)
@@ -81,7 +106,7 @@
         /// </summary>
         /// <param name="localTilePosition">The position of the ground tile to find.</param>
         /// <returns>The ground tile at localTilePosition.</returns>
-        public ITileGround2D GetGround(TilePosition2D localTilePosition)
+        public TileGround2D GetGround(TilePosition2D localTilePosition)
         {
             return tiles[localTilePosition.x, localTilePosition.z].ground;
         }
@@ -92,7 +117,7 @@
         public void RemoveGround(TilePosition2D localTilePosition)
         {
             //Get the tile.
-            ITileGround2D tile = tiles[localTilePosition.x, localTilePosition.z].ground;
+            TileGround2D tile = tiles[localTilePosition.x, localTilePosition.z].ground;
 
             //Remove the tile.
             if (tile != null)
@@ -103,14 +128,50 @@
                 map?.OnGroundRemoved(this, position.GetGlobalTilePosition(localTilePosition), tile);
             }
         }
+        /// <summary>
+        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
+        /// Renders a tile at globalTilePosition.
+        /// </summary>
+        /// <param name="globalTilePosition"></param>
+        /// <param name="tile">The tile to render.</param>
+        public void RenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+        {
+            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
+            if (tiles[localTilePosition.x, localTilePosition.z].groundRenderObject == null)
+                tiles[localTilePosition.x, localTilePosition.z].groundRenderObject = tile.OnRendered(this, globalTilePosition);
+#if DEBUGGING
+            else
+                Debug.LogWarning("Attempted to render a ground tile at a tile position that is already rendered!");
+#endif
+        }
+        /// <summary>
+        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
+        /// Unrenders a tile at globalTilePosition.
+        /// </summary>
+        /// <param name="globalTilePosition"></param>
+        /// <param name="tile">The tile to unrender.</param>
+        public void UnrenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+        {
+            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
+            if (tiles[localTilePosition.x, localTilePosition.z].groundRenderObject != null)
+            {
+                tile.OnUnrendered(this, globalTilePosition, tiles[localTilePosition.x, localTilePosition.z].groundRenderObject);
+                tiles[localTilePosition.x, localTilePosition.z].groundRenderObject = null;
+            }
+#if DEBUGGING
+            else
+                Debug.LogWarning("Attempted to unrender a ground tile at a tile position that isn't already rendered!");
+#endif
+        }
+
 
         /// <summary>
-        /// Places an interactable tile at globalTilePosition.
+        /// Places an interactable tile at localTilePosition.
         /// If an interactable tile already exists in that position, the interactable tile is first removed.
         /// </summary>
         /// <param name="localTilePosition">Where to place the interactable tile.</param>
         /// <param name="tile">The interactable tile to place.</param>
-        public void PlaceInteractable(TilePosition2D localTilePosition, ITileInteractable2D tile)
+        public ITileEntity2D PlaceInteractable(TilePosition2D localTilePosition, TileInteractable2D tile)
         {
             //Remove the existing tile.
             if (tiles[localTilePosition.x, localTilePosition.z].ground != null)
@@ -119,8 +180,19 @@
             //Place the new tile.
             tiles[localTilePosition.x, localTilePosition.z].interactable = tile;
             tile.OnPlaced(this, localTilePosition);
+
+            //Create the interactable tile's tile entity.
+            ITileEntity2D tileEntity = tile.CreateTileEntity(this, localTilePosition);
+            if (tileEntity != null)
+            {
+                tileEntities.Add(localTilePosition, tileEntity);
+                tileEntity.OnPlaced(this, localTilePosition);
+            }
+
             //Call the OnTilePlaced map event.
             map?.OnInteractablePlaced(this, position.GetGlobalTilePosition(localTilePosition), tile);
+
+            return tileEntity;
         }
         /// <summary>
         /// Gets the interactable tile at localTilePosition.
@@ -128,7 +200,7 @@
         /// </summary>
         /// <param name="localTilePosition">The position of the interactable tile to find.</param>
         /// <returns>The interactable tile at localTilePosition.</returns>
-        public ITileInteractable2D GetInteractable(TilePosition2D localTilePosition)
+        public TileInteractable2D GetInteractable(TilePosition2D localTilePosition)
         {
             return tiles[localTilePosition.x, localTilePosition.z].interactable;
         }
@@ -139,26 +211,143 @@
         public void RemoveInteractable(TilePosition2D localTilePosition)
         {
             //Get the tile.
-            ITileInteractable2D tile = tiles[localTilePosition.x, localTilePosition.z].interactable;
+            TileInteractable2D tile = tiles[localTilePosition.x, localTilePosition.z].interactable;
 
             //Remove the tile.
             if (tile != null)
             {
+                TilePosition2D globalTilePosition = position.GetGlobalTilePosition(localTilePosition);
+
+                //Remove the tile entity.
+                ITileEntity2D tileEntity;
+                if (tileEntities.TryGetValue(localTilePosition, out tileEntity))
+                {
+                    tileEntity.OnRemoved(this, globalTilePosition);
+                    tileEntities.Remove(localTilePosition);
+                }
+
                 tile.OnRemoved(this, localTilePosition);
                 tiles[localTilePosition.x, localTilePosition.z].ground = null;
                 //Call the OnTileRemoved map event.
-                map?.OnInteractableRemoved(this, position.GetGlobalTilePosition(localTilePosition), tile);
+                map?.OnInteractableRemoved(this, globalTilePosition, tile);
             }
+        }
+        /// <summary>
+        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
+        /// Renders a tile at globalTilePosition.
+        /// </summary>
+        /// <param name="globalTilePosition"></param>
+        /// <param name="tile">The tile to render.</param>
+        public void RenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
+        {
+            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
+            if (tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject == null)
+                tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject = tile.OnRendered(this, globalTilePosition);
+#if DEBUGGING
+            else
+                Debug.LogWarning("Attempted to render an interactable tile at a tile position that is already rendered!");
+#endif
+        }
+        /// <summary>
+        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
+        /// Unrenders a tile at globalTilePosition.
+        /// </summary>
+        /// <param name="globalTilePosition"></param>
+        /// <param name="tile">The tile to unrender.</param>
+        public void UnrenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
+        {
+            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
+            if (tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject != null)
+            {
+                tile.OnUnrendered(this, globalTilePosition, tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject);
+                tiles[globalTilePosition.x, globalTilePosition.z].interactableRenderObject = null;
+            }
+#if DEBUGGING
+            else
+                Debug.LogWarning("Attempted to unrender an interactable tile at a tile position that isn't already rendered!");
+#endif
+        }
+        
+
+        /// <summary>
+        /// Gets the tile entity at localTilePosition.
+        /// If no tile entity exists at the position, null is returned.
+        /// </summary>
+        /// <param name="localTilePosition">The position of the tile entity to find.</param>
+        /// <returns>The tile entity at localTilePosition</returns>
+        public ITileEntity2D GetTileEntity(TilePosition2D localTilePosition)
+        {
+            return tileEntities.ContainsKey(localTilePosition) ? tileEntities[localTilePosition] : null;
+        }
+        /// <summary>
+        /// Gets the tile entity at localTilePosition.
+        /// </summary>
+        /// <param name="localTilePosition">The position of the tile entity to find.</param>
+        /// <param name="tileEntity">The tile entity to find.</param>
+        /// <returns>True if a tile entity was found. False otherwise.</returns>
+        public bool TryGetTileEntity(TilePosition2D localTilePosition, out ITileEntity2D tileEntity)
+        {
+            return tileEntities.TryGetValue(localTilePosition, out tileEntity);
         }
 
 
         /// <summary>
-        /// A struct containing all the tiles in a specific tile position.
+        /// Exports this region.
         /// </summary>
-        public struct TileStack
+        /// <param name="writer">The stream to export into.</param>
+        /// <param name="groundRegistry">The dynamic registry that holds all the ground tiles.</param>
+        /// <param name="interactableRegistry">The dynamic registry that holds all the intertactable tiles.</param>
+        public void Export(BinaryWriter writer, DynamicRegistry<TileGround2D, string> groundRegistry, DynamicRegistry<TileInteractable2D, string> interactableRegistry)
         {
-            public ITileGround2D ground;
-            public ITileInteractable2D interactable;
+            for (int x = 0; x < RegionPosition2D.REGION_SIZE; x++)
+                for (int z = 0; z < RegionPosition2D.REGION_SIZE; z++)
+                {
+                    TilePosition2D tp = new TilePosition2D(x, z);
+
+                    //Export ground.
+                    TileGround2D ground = GetGround(tp);
+                    writer.Write(groundRegistry.GetId(ground));
+
+                    //Export interactable.
+                    TileInteractable2D interactable = GetInteractable(tp);
+                    writer.Write(interactableRegistry.GetId(interactable));
+                    if (interactable != null)
+                    {
+                        //Export tile entity.
+                        ITileEntity2D tileEntity = GetTileEntity(tp);
+                        if (tileEntity != null)
+                            tileEntity.Export(writer);
+                    }
+                }
+        }
+        /// <summary>
+        /// Imports this region.
+        /// </summary>
+        /// <param name="reader">The stream to import from.</param>
+        /// <param name="groundRegistry">The dynamic registry that holds all the ground tiles.</param>
+        /// <param name="interactableRegistry">The dynamic registry that holds all the intertactable tiles.</param>
+        public void Import(BinaryReader reader, DynamicRegistry<TileGround2D, string> groundRegistry, DynamicRegistry<TileInteractable2D, string> interactableRegistry)
+        {
+            for (int x = 0; x < RegionPosition2D.REGION_SIZE; x++)
+                for (int z = 0; z < RegionPosition2D.REGION_SIZE; z++)
+                {
+                    TilePosition2D tp = new TilePosition2D(x, z);
+
+                    //Import ground.
+                    TileGround2D ground = groundRegistry.GetValue(reader.ReadUInt16());
+                    if (ground != null)
+                        PlaceGround(tp, ground);
+
+                    //Import interactable.
+                    TileInteractable2D interactable = interactableRegistry.GetValue(reader.ReadUInt16());
+                    if (interactable != null)
+                    {
+                        ITileEntity2D e = PlaceInteractable(tp, interactable);
+                        //Import tile entity.
+                        if (e != null)
+                            e.Import(reader);
+                    }
+                }
         }
     }
 }

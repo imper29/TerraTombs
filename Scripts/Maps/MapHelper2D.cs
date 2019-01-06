@@ -1,6 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Maps
 {
@@ -13,7 +11,7 @@ namespace Maps
         /// A plane used for quickly finding approximate raycasting collisions.
         /// </summary>
         private static readonly Plane MAP_COLLISION_PLANE = new Plane(Vector3.down, Vector3.zero);
-
+        
         /// <summary>
         /// Gets the tile position that intersects a ray created from the viewport and the screenPosition.
         /// If you passed in the main camera and the mouse position, you would get the tile position that the mouse is hovered over.

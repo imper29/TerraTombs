@@ -10,6 +10,52 @@
         /// </summary>
         public const int REGION_SIZE = 50;
         /// <summary>
+        /// The size of the region in tiles - 1.
+        /// </summary>
+        public const int REGION_SIZE_MINUS_ONE = REGION_SIZE - 1;
+
+        /// <summary>
+        /// The region position directly to the right of this region position.
+        /// </summary>
+        public RegionPosition2D Right
+        {
+            get
+            {
+                return new RegionPosition2D(x + 1, z);
+            }
+        }
+        /// <summary>
+        /// The region position directly to the left of this region position.
+        /// </summary>
+        public RegionPosition2D Left
+        {
+            get
+            {
+                return new RegionPosition2D(x - 1, z);
+            }
+        }
+        /// <summary>
+        /// The region position directly above this region position.
+        /// </summary>
+        public RegionPosition2D Above
+        {
+            get
+            {
+                return new RegionPosition2D(x, z + 1);
+            }
+        }
+        /// <summary>
+        /// The region position directly below this region position.
+        /// </summary>
+        public RegionPosition2D Below
+        {
+            get
+            {
+                return new RegionPosition2D(x, z - 1);
+            }
+        }
+
+        /// <summary>
         /// The x and y values of this position.
         /// </summary>
         public int x, z;
