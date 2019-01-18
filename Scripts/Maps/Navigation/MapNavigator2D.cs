@@ -4,6 +4,9 @@ using Utils.Collections;
 
 namespace Maps.Navigation
 {
+    /// <summary>
+    /// Provides navigation and pathfinding capabilities to a map.
+    /// </summary>
     public class MapNavigator2D
     {
         /// <summary>
@@ -69,24 +72,11 @@ namespace Maps.Navigation
         /// <returns>A path that goes from originPos to destinationPos.</returns>
         private Path2D GetPath(TilePosition2D originPos, TilePosition2D destinationPos, NavigationMode navigationMode)
         {
-            //There are no supported navigation modes so the path will fail.
-            if (navigationMode == NavigationMode.None)
+            int maxNodeCount = map.GetRegionCount() * RegionPosition2D.REGION_SIZE * RegionPosition2D.REGION_SIZE;
+            if (maxNodeCount == 0)
             {
-                Debug.LogWarning("Attempted to create a path with no supported navigation modes!");
-                return new Path2D();
-            }
-            //The origin node doesn't exist so the path will fail.
-            TileStack te;
-            if (!map.TryGetTileStack(originPos, out te) || te.ground == null)
-            {
-                Debug.LogWarning("Attempted to create a path from a non-existent node!");
-                return new Path2D();
-            }
-            //The destination node doesn't exist so the path will fail.
-            if (!map.TryGetTileStack(destinationPos, out te) || te.ground == null)
-            {
-                Debug.LogWarning("Attempted to create a path to a non-existent node!");
-                return new Path2D();
+                Debug.LogWarning("Failed to find a path from " + originPos.x + "," + originPos.z + " to " + destinationPos.x + "," + destinationPos.z);
+                return new Path2D(map);
             }
 
             //A collection all the existing nodes.
@@ -94,7 +84,7 @@ namespace Maps.Navigation
             //All the nodes that have already been checked.
             HashSet<TilePosition2D> closedSet = new HashSet<TilePosition2D>();
             //All the nodes to check.
-            Heap<Node2D> openSet = new Heap<Node2D>(map.GetRegionCount() * RegionPosition2D.REGION_SIZE * RegionPosition2D.REGION_SIZE);
+            Heap<Node2D> openSet = new Heap<Node2D>(maxNodeCount);
             //Add the first node to the collection of nodes to check.
             openSet.Add(new Node2D(originPos, destinationPos, 0));
 
@@ -114,7 +104,7 @@ namespace Maps.Navigation
                         positions.Add(current.position);
                         current = current.parent;
                     }
-                    return new Path2D(positions.ToArray());
+                    return new Path2D(map, positions.ToArray());
                 }
 
                 //Get the node's neighbour positions.
@@ -155,7 +145,7 @@ namespace Maps.Navigation
             }
 
             Debug.LogWarning("Failed to find a path from " + originPos.x + "," + originPos.z + " to " + destinationPos.x + "," + destinationPos.z);
-            return new Path2D();
+            return new Path2D(map);
         }
         /// <summary>
         /// Gets all the neighbouring node positions and weights.
@@ -210,7 +200,7 @@ namespace Maps.Navigation
         /// Called by the map navigator handler.
         /// Calculates all the currently requested paths.
         /// </summary>
-        public void ProcessPathRequests()
+        internal void ProcessPathRequests()
         {
             while (pathRequests.Count > 0)
             {

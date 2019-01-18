@@ -7,16 +7,12 @@ namespace Maps.Navigation
     /// <summary>
     /// Handles all the map navigators and provides a seperate thread to do pathfinding.
     /// </summary>
-    public class MapNavigatorHandler2D : MonoBehaviour
+    internal class MapNavigatorHandler2D : MonoBehaviour
     {
         private static readonly List<MapNavigator2D> mapNavigators = new List<MapNavigator2D>();
         private static readonly Thread thread = new Thread(ThreadFunc);
         private static bool threadIsRunning;
 
-        private void Awake()
-        {
-            DontDestroyOnLoad(gameObject);
-        }
         private void Start()
         {
             threadIsRunning = true;
@@ -26,7 +22,10 @@ namespace Maps.Navigation
         {
             threadIsRunning = false;
         }
-
+        private void Update()
+        {
+            ThreadFunc();
+        }
 
         /// <summary>
         /// The function that runs in a seperate thread.
@@ -34,7 +33,7 @@ namespace Maps.Navigation
         /// </summary>
         private static void ThreadFunc()
         {
-            while (threadIsRunning)
+            //while (threadIsRunning)
             {
                 MapNavigator2D[] navs;
                 lock (mapNavigators)

@@ -1,9 +1,8 @@
-﻿using UnityEngine;
-using Utils.Collections;
+﻿using Utils.Collections;
 
 namespace Maps.Navigation
 {
-    public class Node2D : IHeapEntry<Node2D>
+    internal class Node2D : IHeapEntry<Node2D>
     {
         /// <summary>
         /// The position of this node.
@@ -34,7 +33,6 @@ namespace Maps.Navigation
             this.position = position;
             this.costFromStart = costFromStart;
             costToEnd = TilePosition2D.GetDistance(position, destination);
-            HeapIndex = 0;
         }
 
         
@@ -49,13 +47,14 @@ namespace Maps.Navigation
             }
         }
         /// <summary>
-        /// Used for heap sorting.
+        /// The index of this node in the heap.
         /// </summary>
         public int HeapIndex
         {
             get;
             set;
         }
+
         /// <summary>
         /// Used for heap sorting.
         /// </summary>
