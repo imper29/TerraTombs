@@ -23,13 +23,11 @@ namespace ModLoading
         /// </summary>
         private static readonly List<ModData> LOADED_MODS = new List<ModData>();
         
-
         private void Awake()
         {
             INSTANCE = this;
             DontDestroyOnLoad(gameObject);
         }
-
 
         /// <summary>
         /// Gets a mod by its ID.
