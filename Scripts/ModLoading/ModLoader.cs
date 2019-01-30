@@ -23,11 +23,13 @@ namespace ModLoading
         /// </summary>
         private static readonly List<ModData> LOADED_MODS = new List<ModData>();
         
+
         private void Awake()
         {
             INSTANCE = this;
             DontDestroyOnLoad(gameObject);
         }
+
 
         /// <summary>
         /// Gets a mod by its ID.
@@ -53,16 +55,40 @@ namespace ModLoading
                     return LOADED_MODS[i].info;
             return default(ModInfo);
         }
+        
+
         /// <summary>
-        /// Finds all the mods in a folder.
+        /// Opens the folder that contains the mods.
         /// </summary>
-        /// <param name="modInfoList">All the mods in a folder.</param>
-        /// <param name="directory">The directory to search.</param>
-        public static void FindAllMods(List<ModInfo> modInfoList, DirectoryInfo directory)
+        public static void OpenModsFolder()
+        {
+            //if (Environment.OSVersion.Platform == PlatformID.MacOSX)
+            Debug.Log(Environment.GetFolderPath(Environment.SpecialFolder.Fonts));
+            System.Diagnostics.Process.Start("explorer.exe", GetModsDirectory().FullName);
+        }
+        /// <summary>
+        /// Gets the mods folder.
+        /// </summary>
+        /// <returns>The directory info for the mods folder.</returns>
+        public static DirectoryInfo GetModsDirectory()
+        {
+            DirectoryInfo modsDirectory = new DirectoryInfo(Application.persistentDataPath + @"\Mods"); ;
+            if (!modsDirectory.Exists)
+                modsDirectory.Create();
+            return modsDirectory;
+        }
+
+
+        /// <summary>
+        /// Finds all the mods in the mods folder.
+        /// </summary>
+        /// <param name="modInfoList">All the mods in the mods folder.</param>
+        public static void FindAllMods(List<ModInfo> modInfoList)
         {
             //Find all the mod dll files.
-            FileInfo[] enabledFiles = directory.GetFiles("*.dll", SearchOption.TopDirectoryOnly);
-            FileInfo[] disabledFiles = directory.GetFiles("*.dll.disabled", SearchOption.TopDirectoryOnly);
+            DirectoryInfo modsDirectory = GetModsDirectory();
+            FileInfo[] enabledFiles = modsDirectory.GetFiles("*.dll", SearchOption.TopDirectoryOnly);
+            FileInfo[] disabledFiles = modsDirectory.GetFiles("*.dll.disabled", SearchOption.TopDirectoryOnly);
             FileInfo[] modFiles = new FileInfo[enabledFiles.Length + disabledFiles.Length];
             enabledFiles.CopyTo(modFiles, 0);
             disabledFiles.CopyTo(modFiles, enabledFiles.Length);
@@ -96,49 +122,15 @@ namespace ModLoading
             }
         }
         /// <summary>
-        /// Sorts a collection of mods based on the mod load order.
-        /// </summary>
-        /// <param name="modInfoList">The mods to sort.</param>
-        /// <param name="modLoadOrder">The mod loading order.</param>
-        public static void SortMods(List<ModInfo> modInfoList, params string[] modLoadOrder)
-        {
-            //Sort the mods.
-            for (int o = 0; o < modLoadOrder.Length; o++)
-                for (int m = o; m < modInfoList.Count; m++)
-                {
-                    ModInfo md = modInfoList[m];
-
-                    if (md.id == modLoadOrder[o])
-                    {
-                        modInfoList.Remove(md);
-                        modInfoList.Insert(0, md);
-                        break;
-                    }
-                }
-            modInfoList.Reverse();
-        }
-        /// <summary>
-        /// Tries to load all the enabled mods in the mods folder based on a mod load order.
-        /// </summary>
-        internal static void LoadMods(params string[] modLoadOrder)
-        {
-            DirectoryInfo modsDirectory = new DirectoryInfo(@"C:\Users\marte\Desktop\Unity\TerraTombs\Mod");
-            List<ModData> modDataList = new List<ModData>();
-            FindMods(modDataList, modsDirectory);
-            SortMods(modDataList, modLoadOrder);
-            LoadMods(modDataList);
-        }
-
-
-        /// <summary>
         /// Finds all the enabled mods in a folder.
         /// </summary>
         /// <param name="modDataList">All the mods in a folder.</param>
         /// <param name="directory">The folder to search..</param>
-        private static void FindMods(List<ModData> modDataList, DirectoryInfo directory)
+        private static void FindMods(List<ModData> modDataList)
         {
             //Find all the mod dll files.
-            FileInfo[] modFiles = directory.GetFiles("*.dll", SearchOption.TopDirectoryOnly);
+            DirectoryInfo modsDirectory = GetModsDirectory();
+            FileInfo[] modFiles = modsDirectory.GetFiles("*.dll", SearchOption.TopDirectoryOnly);
 
             //Find all the modInfo.xml resources from the dll files.
             XmlSerializer modInfoSerializer = new XmlSerializer(typeof(ModInfo));
@@ -168,27 +160,17 @@ namespace ModLoading
                 }
             }
         }
-        /// <summary>
-        /// Sorts a collection of mods based on the mod load order.
-        /// </summary>
-        /// <param name="modDataList">The mods to sort.</param>
-        /// <param name="modLoadOrder">The mod loading order.</param>
-        private static void SortMods(List<ModData> modDataList, params string[] modLoadOrder)
-        {
-            //Sort the mods.
-            for (int o = 0; o < modLoadOrder.Length; o++)
-                for (int m = o; m < modDataList.Count; m++)
-                {
-                    ModData md = modDataList[m];
 
-                    if (md.info.id == modLoadOrder[o])
-                    {
-                        modDataList.Remove(md);
-                        modDataList.Insert(0, md);
-                        break;
-                    }
-                }
-            modDataList.Reverse();
+
+        /// <summary>
+        /// Tries to load all the enabled mods in the mods folder based on a mod load order.
+        /// </summary>
+        internal static void LoadMods(params string[] modLoadOrder)
+        {
+            List<ModData> modDataList = new List<ModData>();
+            FindMods(modDataList);
+            SortMods(modDataList, modLoadOrder);
+            LoadMods(modDataList);
         }
         /// <summary>
         /// Loads a collection of mods.
@@ -248,6 +230,53 @@ namespace ModLoading
             for (int i = 0; i < LOADED_MODS.Count; i++)
                 LOADED_MODS[i].mod.PostInit();
         }
+
+
+        /// <summary>
+        /// Sorts a collection of mods based on the mod load order.
+        /// </summary>
+        /// <param name="modDataList">The mods to sort.</param>
+        /// <param name="modLoadOrder">The mod loading order.</param>
+        private static void SortMods(List<ModData> modDataList, params string[] modLoadOrder)
+        {
+            //Sort the mods.
+            for (int o = 0; o < modLoadOrder.Length; o++)
+                for (int m = o; m < modDataList.Count; m++)
+                {
+                    ModData md = modDataList[m];
+
+                    if (md.info.id == modLoadOrder[o])
+                    {
+                        modDataList.Remove(md);
+                        modDataList.Insert(0, md);
+                        break;
+                    }
+                }
+            modDataList.Reverse();
+        }
+        /// <summary>
+        /// Sorts a collection of mods based on the mod load order.
+        /// </summary>
+        /// <param name="modInfoList">The mods to sort.</param>
+        /// <param name="modLoadOrder">The mod loading order.</param>
+        public static void SortMods(List<ModInfo> modInfoList, params string[] modLoadOrder)
+        {
+            //Sort the mods.
+            for (int o = 0; o < modLoadOrder.Length; o++)
+                for (int m = o; m < modInfoList.Count; m++)
+                {
+                    ModInfo md = modInfoList[m];
+
+                    if (md.id == modLoadOrder[o])
+                    {
+                        modInfoList.Remove(md);
+                        modInfoList.Insert(0, md);
+                        break;
+                    }
+                }
+            modInfoList.Reverse();
+        }
+
 
         /// <summary>
         /// Checks to see if a mod can be loaded.
