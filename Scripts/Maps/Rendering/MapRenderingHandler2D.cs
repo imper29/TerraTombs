@@ -23,7 +23,7 @@ namespace Maps.Rendering
             lock (mapRenderers)
                 rends = mapRenderers.ToArray();
             for (int i = 0; i < rends.Length; i++)
-                rends[i].ProcessRenderOperations();
+                rends[i].ProcessRenderRequests();
         }
 
         /// <summary>

@@ -11,6 +11,7 @@ namespace Maps.Rendering
         /// The tile stacks this area renderer will render.
         /// </summary>
         private readonly TileStack[,] tiles;
+        private readonly TileStackRenderData2D[,] tileRenderers;
         /// <summary>
         /// Determines if the ghost renderer is currently rendered.
         /// </summary>
@@ -24,6 +25,7 @@ namespace Maps.Rendering
         public AreaGhostRenderer2D(TileStack[,] tiles)
         {
             this.tiles = tiles;
+            tileRenderers = new TileStackRenderData2D[tiles.GetLength(0), tiles.GetLength(1)];
             rendered = false;
         }
 
@@ -51,10 +53,10 @@ namespace Maps.Rendering
 
                         //render the ghost ground tile.
                         if (tiles[x, z].ground != null)
-                            tiles[x, z].groundRenderObject = tiles[x, z].ground.OnGhostRendered(null, globalTilePosition);
+                            tileRenderers[x, z].groundRenderObject = tiles[x, z].ground.OnGhostRendered(null, globalTilePosition);
                         //Render the ghost interactable tile.
                         if (tiles[x, z].interactable != null)
-                            tiles[x, z].interactableRenderObject = tiles[x, z].interactable.OnGhostRendered(null, globalTilePosition);
+                            tileRenderers[x, z].interactableRenderObject = tiles[x, z].interactable.OnGhostRendered(null, globalTilePosition);
                     }
             }
         }
@@ -77,14 +79,14 @@ namespace Maps.Rendering
                         //Unrender the ground tile.
                         if (tiles[x, z].ground != null)
                         {
-                            tiles[x, z].ground.OnGhostUnrendered(null, globalTilePositon, tiles[x, z].groundRenderObject);
-                            tiles[x, z].groundRenderObject = null;
+                            tiles[x, z].ground.OnGhostUnrendered(null, globalTilePositon, tileRenderers[x, z].groundRenderObject);
+                            tileRenderers[x, z].groundRenderObject = null;
                         }
                         //Unrender the interactable tile.
                         if (tiles[x, z].interactable != null)
                         {
-                            tiles[x, z].interactable.OnGhostUnrendered(null, globalTilePositon, tiles[x, z].interactableRenderObject);
-                            tiles[x, z].interactableRenderObject = null;
+                            tiles[x, z].interactable.OnGhostUnrendered(null, globalTilePositon, tileRenderers[x, z].interactableRenderObject);
+                            tileRenderers[x, z].interactableRenderObject = null;
                         }
                     }
             }

@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using UnityEngine;
+using Utils.Threading;
 
 namespace Maps.Rendering
 {
@@ -13,24 +13,18 @@ namespace Maps.Rendering
         /// </summary>
         private readonly Map2D map;
         /// <summary>
-        /// The regions currently rendered.
+        /// A queue of all the rendering operations that need to be done.
         /// </summary>
-        private readonly List<Region2D> renderedRegionsList;
+        private readonly RequestQueue<IRequest<MapRenderer2D>, MapRenderer2D> renderRequests;
         /// <summary>
-        /// The regions currently rendered.
+        /// The render data for the regions currently rendered.
         /// </summary>
-        private readonly Dictionary<RegionPosition2D, Region2D> renderedRegionsDictionary;
-        /// <summary>
-        /// Used to ensure that interacting with maps is thread-safe.
-        /// The operations ProcessRenderOperations will process.
-        /// Every time a tile needs to be rendered, an operation is added to this list.
-        /// When the operations are processed, the list is cleared.
-        /// </summary>
-        private readonly List<IRenderOperation> renderOperations;
+        private readonly Dictionary<RegionPosition2D, RegionRenderer2D> regionRenderers;
         /// <summary>
         /// Is this renderer enabled?
         /// </summary>
         private bool enabled;
+
 
 
         /// <summary>
@@ -40,10 +34,10 @@ namespace Maps.Rendering
         public MapRenderer2D(Map2D map)
         {
             this.map = map;
-            renderedRegionsList = new List<Region2D>();
-            renderedRegionsDictionary = new Dictionary<RegionPosition2D, Region2D>();
-            renderOperations = new List<IRenderOperation>();
+            renderRequests = new RequestQueue<IRequest<MapRenderer2D>, MapRenderer2D>();
+            regionRenderers = new Dictionary<RegionPosition2D, RegionRenderer2D>();
         }
+
 
 
         /// <summary>
@@ -57,7 +51,8 @@ namespace Maps.Rendering
                 MapRenderingHandler2D.OnRendererEnabled(this);
 
                 //Start listening to map events.
-                map.OnRegionDestroyed += Map_OnRegionDestroyed;
+                map.OnRegionCreated += CreateRegionRenderer;
+                map.OnRegionDestroyed += DestroyRegionRenderer;
                 map.OnGroundPlaced += Map_OnGroundPlaced;
                 map.OnGroundRemoved += Map_OnGroundRemoved;
                 map.OnInteractablePlaced += Map_OnInteractablePlaced;
@@ -72,321 +67,384 @@ namespace Maps.Rendering
             if (enabled)
             {
                 enabled = false;
-                
+                MapRenderingHandler2D.OnRendererDisabled(this);
+
                 //Stop listening to map events.
-                map.OnRegionDestroyed -= Map_OnRegionDestroyed;
+                map.OnRegionCreated -= CreateRegionRenderer;
+                map.OnRegionDestroyed -= DestroyRegionRenderer;
                 map.OnGroundPlaced -= Map_OnGroundPlaced;
                 map.OnGroundRemoved -= Map_OnGroundRemoved;
                 map.OnInteractablePlaced -= Map_OnInteractablePlaced;
                 map.OnInteractableRemoved -= Map_OnInteractableRemoved;
 
                 //Clear render operations.
-                renderOperations.Clear();
+                renderRequests.Clear();
 
                 //Unrender all the regions.
-                Region2D[] regions = renderedRegionsList.ToArray();
-                for (int i = 0; i < regions.Length; i++)
-                    UnrenderRegion(regions[i].GetPosition());
-
-                //Make the map renderer be removed from the list of active map renderers after the regions have all been unrendered.
-                renderOperations.Add(new OnMapRendererDisabled(this));
+                RegionPosition2D[] regionPositions = new RegionPosition2D[regionRenderers.Count];
+                regionRenderers.Keys.CopyTo(regionPositions, 0);
+                for (int i = 0; i < regionPositions.Length; i++)
+                    UnrenderRegion(regionPositions[i]);
             }
         }
 
 
+
         /// <summary>
-        /// Called when a region in the map is destroyed.
+        /// Called when a ground tile is placed onto the map.
         /// </summary>
-        /// <param name="region">The region that was destroyed.</param>
-        private void Map_OnRegionDestroyed(Region2D region)
-        {
-            //If the region that was destroyed was also rendered, unrender it.
-            if (renderedRegionsDictionary.ContainsValue(region))
-                UnrenderRegion(region.GetPosition());
-        }
-        /// <summary>
-        /// Called when a ground tile is placed.
-        /// </summary>
-        /// <param name="region">The region that contains the tile.</param>
-        /// <param name="globalTilePosition">The position the tile was removed from.</param>
-        /// <param name="tile">The tile that was removed.</param>
+        /// <param name="region">The region the tile was placed into.</param>
+        /// <param name="globalTilePosition">The position the tile was placed.</param>
+        /// <param name="tile">The tile that was placed.</param>
         private void Map_OnGroundPlaced(Region2D region, TilePosition2D globalTilePosition, TileGround2D tile)
         {
-            //If the region is currently rendered, render the tile.
-            if (renderedRegionsList.Contains(region))
-                lock (renderOperations)
-                    renderOperations.Add(new RenderGround(tile, globalTilePosition, region));
+            renderRequests.Enqueue(new _RenderGround(globalTilePosition, tile));
         }
         /// <summary>
-        /// Called when a ground tile is removed.
+        /// Called when a ground tile is removed from the map.
         /// </summary>
-        /// <param name="region">The region that contains the tile.</param>
-        /// <param name="globalTilePosition">The position the tile was removed from.</param>
+        /// <param name="region">The region the tile was removed from.</param>
+        /// <param name="globalTilePosition">The position the tile was removed.</param>
         /// <param name="tile">The tile that was removed.</param>
         private void Map_OnGroundRemoved(Region2D region, TilePosition2D globalTilePosition, TileGround2D tile)
         {
-            //If the region is currently rendered, unrender the tile.
-            if (renderedRegionsList.Contains(region))
-                lock (renderOperations)
-                    renderOperations.Add(new UnrenderGround(tile, globalTilePosition, region));
+            renderRequests.Enqueue(new _UnrenderGround(globalTilePosition, tile));
         }
         /// <summary>
-        /// Called when an interactable tile is placed.
+        /// Called when an interactable tile is placed onto the map.
         /// </summary>
-        /// <param name="region">The region that contains the tile.</param>
-        /// <param name="globalTilePosition">The position the tile was removed from.</param>
-        /// <param name="tile">The tile that was removed.</param>
+        /// <param name="region">The region the tile was placed into.</param>
+        /// <param name="globalTilePosition">The position the tile was placed.</param>
+        /// <param name="tile">The tile that was placed.</param>
         private void Map_OnInteractablePlaced(Region2D region, TilePosition2D globalTilePosition, TileInteractable2D tile)
         {
-            //If the region is currently rendered, render the tile.
-            if (renderedRegionsList.Contains(region))
-                lock (renderOperations)
-                    renderOperations.Add(new RenderInteractable(tile, globalTilePosition, region));
+            renderRequests.Enqueue(new _RenderInteractable(globalTilePosition, tile));
         }
         /// <summary>
-        /// Called when an interactable tile is removed.
+        /// Called when an interactable tile is removed from the map.
         /// </summary>
-        /// <param name="region">The region that contains the tile.</param>
-        /// <param name="globalTilePosition">The position the tile was removed from.</param>
+        /// <param name="region">The region the tile was removed from.</param>
+        /// <param name="globalTilePosition">The position the tile was removed.</param>
         /// <param name="tile">The tile that was removed.</param>
         private void Map_OnInteractableRemoved(Region2D region, TilePosition2D globalTilePosition, TileInteractable2D tile)
         {
-            //If the region is currently rendered, unrender the tile.
-            if (renderedRegionsList.Contains(region))
-                lock (renderOperations)
-                    renderOperations.Add(new UnrenderInteractable(tile, globalTilePosition, region));
+            renderRequests.Enqueue(new _UnrenderInteractable(globalTilePosition, tile));
         }
 
 
+
+        /// <summary>
+        /// Adds a request to render an entire region to the render queue.
+        /// </summary>
+        /// <param name="regionPosition2D">The position of the region to render.</param>
+        public void RequestRenderRegion(RegionPosition2D regionPosition2D)
+        {
+            renderRequests.Enqueue(new _RenderRegion(regionPosition2D));
+        }
+        /// <summary>
+        /// Adds a request to unrender an entire region to the render queue.
+        /// </summary>
+        /// <param name="regionPosition2D">The position of the region to unrender.</param>
+        public void RequestUnrenderRegion(RegionPosition2D regionPosition2D)
+        {
+            renderRequests.Enqueue(new _UnrenderRegion(regionPosition2D));
+        }
+
+        /// <summary>
+        /// Adds a request to render a tile.
+        /// </summary>
+        /// <param name="globalTilePosition">The position to render the tile.</param>
+        /// <param name="tile">The tile to render.</param>
+        public void RequestRenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
+        {
+            if (tile != null)
+                renderRequests.Enqueue(new _RenderInteractable(globalTilePosition, tile));
+        }
+        /// <summary>
+        /// Adds a request to unrender a tile.
+        /// </summary>
+        /// <param name="globalTilePosition">The position to unrender the tile from.</param>
+        /// <param name="tile">The tile to unrender.</param>
+        public void RequestUnrenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
+        {
+            if (tile != null)
+                renderRequests.Enqueue(new _UnrenderInteractable(globalTilePosition, tile));
+        }
+        /// <summary>
+        /// Adds a request to render a tile.
+        /// </summary>
+        /// <param name="globalTilePosition">The position to render the tile.</param>
+        /// <param name="tile">The tile to render.</param>
+        public void RequestRenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+        {
+            if (tile != null)
+                renderRequests.Enqueue(new _RenderGround(globalTilePosition, tile));
+        }
+        /// <summary>
+        /// Adds a request to unrender a tile.
+        /// </summary>
+        /// <param name="globalTilePosition">The position to unrender the tile from.</param>
+        /// <param name="tile">The tile to unrender.</param>
+        public void RequestUnrenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+        {
+            if (tile != null)
+                renderRequests.Enqueue(new _UnrenderGround(globalTilePosition, tile));
+        }
+
+
+
+        /// <summary>
+        /// Creates a region renderer.
+        /// </summary>
+        /// <param name="region">The region to create a region renderer for.</param>
+        private void CreateRegionRenderer(Region2D region)
+        {
+            RegionRenderer2D regionRenderer = new RegionRenderer2D(region);
+            regionRenderers.Add(region.GetPosition(), regionRenderer);
+        }
+        /// <summary>
+        /// Unrenders and destroys a region renderer.
+        /// </summary>
+        /// <param name="region">The region to unrender.</param>
+        private void DestroyRegionRenderer(Region2D region)
+        {
+            renderRequests.Enqueue(new _DestroyRegionRenderer(region.GetPosition()));
+        }
         /// <summary>
         /// Renders a region.
         /// </summary>
         /// <param name="regionPosition">The position of the region to render.</param>
-        public void RenderRegion(RegionPosition2D regionPosition)
+        private void RenderRegion(RegionPosition2D regionPosition)
         {
-            if (renderedRegionsDictionary.ContainsKey(regionPosition))
-                Debug.LogWarning("Tried to render a region that is already rendered!");
-            else
+            if (regionRenderers.TryGetValue(regionPosition, out RegionRenderer2D regionRenderer))
             {
-                Region2D r = map.GetRegion(regionPosition);
-                if (r != null)
+                Region2D region = regionRenderer.GetRegion();
+                for (int x = 0; x < RegionPosition2D.REGION_SIZE; x++)
                 {
-                    //Add the region to the rendered regions dictionary / list.
-                    renderedRegionsDictionary.Add(regionPosition, r);
-                    renderedRegionsList.Add(r);
-
-                    //Loop through all the tiles in the region.
-                    TileStack[,] tiles = r.GetTileStacks();
-                    lock (renderOperations)
+                    for (int z = 0; z < RegionPosition2D.REGION_SIZE; z++)
                     {
-                        for (int x = 0; x < RegionPosition2D.REGION_SIZE; x++)
-                            for (int z = 0; z < RegionPosition2D.REGION_SIZE; z++)
-                            {
-                                TilePosition2D tp = regionPosition.GetGlobalTilePosition(x, z);
-                                //Render the tiles.
-                                if (tiles[x, z].ground != null)
-                                    renderOperations.Add(new RenderGround(tiles[x, z].ground, tp, r));
-                                if (tiles[x, z].interactable != null)
-                                    renderOperations.Add(new RenderInteractable(tiles[x, z].interactable, tp, r));
-                            }
+                        TilePosition2D localTilePosition = new TilePosition2D(x, z);
+                        TilePosition2D globalTilePosition = regionPosition.GetGlobalTilePosition(localTilePosition);
+
+                        TileStack stack = region.GetTileStack(localTilePosition);
+                        if (stack.ground != null)
+                            regionRenderer.RenderGround(globalTilePosition, stack.ground);
+                        if (stack.interactable != null)
+                            regionRenderer.RenderInteractable(globalTilePosition, stack.interactable);
                     }
                 }
-                else
-                    Debug.LogWarning("Tried to render a region that doesn't exist!");
             }
         }
         /// <summary>
         /// Unrenders a region.
         /// </summary>
         /// <param name="regionPosition">The position of the region to unrender.</param>
-        public void UnrenderRegion(RegionPosition2D regionPosition)
+        private void UnrenderRegion(RegionPosition2D regionPosition)
         {
-            //If the region is currently rendered by this renderer...
-            Region2D r;
-            if (renderedRegionsDictionary.TryGetValue(regionPosition, out r))
+            if (regionRenderers.TryGetValue(regionPosition, out RegionRenderer2D regionRenderer))
             {
-                //Get the region and remove it from the rendered regions dictionary / list.
-                renderedRegionsDictionary.Remove(regionPosition);
-                renderedRegionsList.Remove(r);
-
-                //Loop through all the tiles in the region.
-                TileStack[,] tiles = r.GetTileStacks();
-                lock (renderOperations)
+                Region2D region = regionRenderer.GetRegion();
+                for (int x = 0; x < RegionPosition2D.REGION_SIZE; x++)
                 {
-                    for (int x = 0; x < RegionPosition2D.REGION_SIZE; x++)
-                        for (int z = 0; z < RegionPosition2D.REGION_SIZE; z++)
-                        {
-                            TilePosition2D tp = regionPosition.GetGlobalTilePosition(x, z);
-                            //Unrender the tiles.
-                            if (tiles[x, z].ground != null)
-                                renderOperations.Add(new UnrenderGround(tiles[x, z].ground, tp, r));
-                            if (tiles[x, z].interactable != null)
-                                renderOperations.Add(new UnrenderInteractable(tiles[x, z].interactable, tp, r));
-                        }
+                    for (int z = 0; z < RegionPosition2D.REGION_SIZE; z++)
+                    {
+                        TilePosition2D localTilePosition = new TilePosition2D(x, z);
+                        TilePosition2D globalTilePosition = regionPosition.GetGlobalTilePosition(localTilePosition);
+
+                        TileStack stack = region.GetTileStack(localTilePosition);
+                        if (stack.ground != null)
+                            regionRenderer.UnrenderGround(globalTilePosition, stack.ground);
+                        if (stack.interactable != null)
+                            regionRenderer.UnrenderInteractable(globalTilePosition, stack.interactable);
+                    }
                 }
             }
-            else
-                Debug.LogWarning("Tried to unrender a region that isn't currently rendered!");
         }
-
+        
         /// <summary>
-        /// Processes all the requested render operations. This method should be called from the main rendering thread.
+        /// Renders a tile.
         /// </summary>
-        public void ProcessRenderOperations()
+        /// <param name="globalTilePosition">The position of the tile to render.</param>
+        /// <param name="tile">The tile to render.</param>
+        private void RenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
         {
-            IRenderOperation[] operations;
-            lock (renderOperations)
-            {
-                operations = renderOperations.ToArray();
-                renderOperations.Clear();
-            }
-            for (int i = 0; i < operations.Length; i++)
-                operations[i].Process();
+            RegionPosition2D regionPosition = globalTilePosition.GetParentRegionPosition();
+            if (regionRenderers.TryGetValue(regionPosition, out RegionRenderer2D regionRender))
+                regionRender.RenderInteractable(globalTilePosition, tile);
         }
         /// <summary>
-        /// Adds a render operation to the list of render operations to do when ProcessRenderOperations is called.
-        /// Note that it will not add the operation if the region is not rendered.
+        /// Unrenders a tile.
         /// </summary>
-        /// <param name="operation">What type of render operation to do.</param>
-        /// <param name="globalTilePosition">The position of tile to operate on.</param>
-        /// <param name="tile">The tile to operate on.</param>
-        public void RequestRenderOperation(IRenderOperation operation)
+        /// <param name="globalTilePosition">The position of the tile to unrender.</param>
+        /// <param name="tile">The tile to unrender.</param>
+        private void UnrenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
         {
-            if (enabled)
-            {
-                RegionPosition2D regionPosition = operation.GetGlobalTilePosition().GetParentRegionPosition();
-                Region2D region;
-                if (renderedRegionsDictionary.TryGetValue(regionPosition, out region))
-                    renderOperations.Add(operation);
-            }
+            RegionPosition2D regionPosition = globalTilePosition.GetParentRegionPosition();
+            if (regionRenderers.TryGetValue(regionPosition, out RegionRenderer2D regionRender))
+                regionRender.UnrenderInteractable(globalTilePosition, tile);
         }
+        /// <summary>
+        /// Renders a tile.
+        /// </summary>
+        /// <param name="globalTilePosition">The position of the tile to render.</param>
+        /// <param name="tile">The tile to render.</param>
+        private void RenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+        {
+            RegionPosition2D regionPosition = globalTilePosition.GetParentRegionPosition();
+            if (regionRenderers.TryGetValue(regionPosition, out RegionRenderer2D regionRender))
+                regionRender.RenderGround(globalTilePosition, tile);
+        }
+        /// <summary>
+        /// Unrenders a tile.
+        /// </summary>
+        /// <param name="globalTilePosition">The position of the tile to unrender.</param>
+        /// <param name="tile">The tile to unrender.</param>
+        private void UnrenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+        {
+            RegionPosition2D regionPosition = globalTilePosition.GetParentRegionPosition();
+            if (regionRenderers.TryGetValue(regionPosition, out RegionRenderer2D regionRender))
+                regionRender.UnrenderGround(globalTilePosition, tile);
+        }
+
+
 
         /// <summary>
-        /// A struct that is added to the render operations to disable the map renderer.
+        /// Processes the currently enqueued render requests.
         /// </summary>
-        private struct OnMapRendererDisabled : IRenderOperation
+        public void ProcessRenderRequests()
         {
-            private readonly MapRenderer2D mapRenderer;
+            renderRequests.RunRequests(this, 1500);
+        }
 
-            public OnMapRendererDisabled(MapRenderer2D mapRenderer)
+
+
+        /// <summary>
+        /// A request to destroy a region renderer.
+        /// </summary>
+        private struct _DestroyRegionRenderer : IRequest<MapRenderer2D>
+        {
+            private readonly RegionPosition2D regionPosition;
+
+            public _DestroyRegionRenderer(RegionPosition2D regionPosition)
             {
-                this.mapRenderer = mapRenderer;
+                this.regionPosition = regionPosition;
             }
 
-            public TilePosition2D GetGlobalTilePosition()
+            public void Process(MapRenderer2D val)
             {
-                return new TilePosition2D();
-            }
-            public void Process()
-            {
-                MapRenderingHandler2D.OnRendererDisabled(mapRenderer);
+                val.UnrenderRegion(regionPosition);
+                val.regionRenderers.Remove(regionPosition);
             }
         }
-    }
+        /// <summary>
+        /// A request to render a region.
+        /// </summary>
+        private struct _RenderRegion : IRequest<MapRenderer2D>
+        {
+            private readonly RegionPosition2D regionPosition;
 
-    public interface IRenderOperation
-    {
-        TilePosition2D GetGlobalTilePosition();
-        void Process();
-    }
-    /// <summary>
-    /// A render operation to render interactable tiles.
-    /// </summary>
-    public struct RenderInteractable : IRenderOperation
-    {
-        private readonly TileInteractable2D tile;
-        private readonly TilePosition2D globalTilePosition;
-        private readonly Region2D region;
+            public _RenderRegion(RegionPosition2D regionPosition)
+            {
+                this.regionPosition = regionPosition;
+            }
 
-        public RenderInteractable(TileInteractable2D tile, TilePosition2D globalTilePosition, Region2D region)
-        {
-            this.tile = tile;
-            this.globalTilePosition = globalTilePosition;
-            this.region = region;
+            public void Process(MapRenderer2D val)
+            {
+                val.RenderRegion(regionPosition);
+            }
         }
+        /// <summary>
+        /// A request to unrender a region.
+        /// </summary>
+        private struct _UnrenderRegion : IRequest<MapRenderer2D>
+        {
+            private readonly RegionPosition2D regionPosition;
 
-        public void Process()
-        {
-            region.RenderInteractable(globalTilePosition, tile);
-        }
-        public TilePosition2D GetGlobalTilePosition()
-        {
-            return globalTilePosition;
-        }
-    }
-    /// <summary>
-    /// A render operation to unrender interactable tiles.
-    /// </summary>
-    public struct UnrenderInteractable : IRenderOperation
-    {
-        private readonly TileInteractable2D tile;
-        private readonly TilePosition2D globalTilePosition;
-        private readonly Region2D region;
+            public _UnrenderRegion(RegionPosition2D regionPosition)
+            {
+                this.regionPosition = regionPosition;
+            }
 
-        public UnrenderInteractable(TileInteractable2D tile, TilePosition2D globalTilePosition, Region2D region)
-        {
-            this.tile = tile;
-            this.globalTilePosition = globalTilePosition;
-            this.region = region;
+            public void Process(MapRenderer2D val)
+            {
+                val.UnrenderRegion(regionPosition);
+            }
         }
+        /// <summary>
+        /// A request to render a ground tile.
+        /// </summary>
+        private struct _RenderGround : IRequest<MapRenderer2D>
+        {
+            private readonly TilePosition2D globalTilePosition;
+            private readonly TileGround2D tile;
 
-        public void Process()
-        {
-            region.UnrenderInteractable(globalTilePosition, tile);
-        }
-        public TilePosition2D GetGlobalTilePosition()
-        {
-            return globalTilePosition;
-        }
-    }
-    /// <summary>
-    /// A render operation to render ground tiles.
-    /// </summary>
-    public struct RenderGround : IRenderOperation
-    {
-        private readonly TileGround2D tile;
-        private readonly TilePosition2D globalTilePosition;
-        private readonly Region2D region;
+            public _RenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+            {
+                this.globalTilePosition = globalTilePosition;
+                this.tile = tile;
+            }
 
-        public RenderGround(TileGround2D tile, TilePosition2D globalTilePosition, Region2D region)
-        {
-            this.tile = tile;
-            this.globalTilePosition = globalTilePosition;
-            this.region = region;
+            public void Process(MapRenderer2D val)
+            {
+                val.RenderGround(globalTilePosition, tile);
+            }
         }
+        /// <summary>
+        /// A request to unrender a ground tile.
+        /// </summary>
+        private struct _UnrenderGround : IRequest<MapRenderer2D>
+        {
+            private readonly TilePosition2D globalTilePosition;
+            private readonly TileGround2D tile;
 
-        public void Process()
-        {
-            region.RenderGround(globalTilePosition, tile);
-        }
-        public TilePosition2D GetGlobalTilePosition()
-        {
-            return globalTilePosition;
-        }
-    }
-    /// <summary>
-    /// A render operation to unrender ground tiles.
-    /// </summary>
-    public struct UnrenderGround : IRenderOperation
-    {
-        private readonly TileGround2D tile;
-        private readonly TilePosition2D globalTilePosition;
-        private readonly Region2D region;
+            public _UnrenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
+            {
+                this.globalTilePosition = globalTilePosition;
+                this.tile = tile;
+            }
 
-        public UnrenderGround(TileGround2D tile, TilePosition2D globalTilePosition, Region2D region)
-        {
-            this.tile = tile;
-            this.globalTilePosition = globalTilePosition;
-            this.region = region;
+            public void Process(MapRenderer2D val)
+            {
+                val.UnrenderGround(globalTilePosition, tile);
+            }
         }
+        /// <summary>
+        /// A request to render an interactable tile.
+        /// </summary>
+        private struct _RenderInteractable : IRequest<MapRenderer2D>
+        {
+            private readonly TilePosition2D globalTilePosition;
+            private readonly TileInteractable2D tile;
 
-        public void Process()
-        {
-            region.UnrenderGround(globalTilePosition, tile);
+            public _RenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
+            {
+                this.globalTilePosition = globalTilePosition;
+                this.tile = tile;
+            }
+
+            public void Process(MapRenderer2D val)
+            {
+                val.RenderInteractable(globalTilePosition, tile);
+            }
         }
-        public TilePosition2D GetGlobalTilePosition()
+        /// <summary>
+        /// A request to unrender an interactable tile.
+        /// </summary>
+        private struct _UnrenderInteractable : IRequest<MapRenderer2D>
         {
-            return globalTilePosition;
+            private readonly TilePosition2D globalTilePosition;
+            private readonly TileInteractable2D tile;
+
+            public _UnrenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
+            {
+                this.globalTilePosition = globalTilePosition;
+                this.tile = tile;
+            }
+
+            public void Process(MapRenderer2D val)
+            {
+                val.UnrenderInteractable(globalTilePosition, tile);
+            }
         }
     }
 }

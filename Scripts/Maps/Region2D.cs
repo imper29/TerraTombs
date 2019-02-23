@@ -128,41 +128,6 @@ namespace Maps
                 map?.OnGroundRemoved(this, position.GetGlobalTilePosition(localTilePosition), tile);
             }
         }
-        /// <summary>
-        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
-        /// Renders a tile at globalTilePosition.
-        /// </summary>
-        /// <param name="globalTilePosition"></param>
-        /// <param name="tile">The tile to render.</param>
-        public void RenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
-        {
-            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
-            if (tiles[localTilePosition.x, localTilePosition.z].groundRenderObject == null)
-                tiles[localTilePosition.x, localTilePosition.z].groundRenderObject = tile.OnRendered(this, globalTilePosition);
-#if DEBUGGING
-            else
-                Debug.LogWarning("Attempted to render a ground tile at a tile position that is already rendered!");
-#endif
-        }
-        /// <summary>
-        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
-        /// Unrenders a tile at globalTilePosition.
-        /// </summary>
-        /// <param name="globalTilePosition"></param>
-        /// <param name="tile">The tile to unrender.</param>
-        public void UnrenderGround(TilePosition2D globalTilePosition, TileGround2D tile)
-        {
-            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
-            if (tiles[localTilePosition.x, localTilePosition.z].groundRenderObject != null)
-            {
-                tile.OnUnrendered(this, globalTilePosition, tiles[localTilePosition.x, localTilePosition.z].groundRenderObject);
-                tiles[localTilePosition.x, localTilePosition.z].groundRenderObject = null;
-            }
-#if DEBUGGING
-            else
-                Debug.LogWarning("Attempted to unrender a ground tile at a tile position that isn't already rendered!");
-#endif
-        }
 
 
         /// <summary>
@@ -231,41 +196,6 @@ namespace Maps
                 //Call the OnTileRemoved map event.
                 map?.OnInteractableRemoved(this, globalTilePosition, tile);
             }
-        }
-        /// <summary>
-        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
-        /// Renders a tile at globalTilePosition.
-        /// </summary>
-        /// <param name="globalTilePosition"></param>
-        /// <param name="tile">The tile to render.</param>
-        public void RenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
-        {
-            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
-            if (tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject == null)
-                tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject = tile.OnRendered(this, globalTilePosition);
-#if DEBUGGING
-            else
-                Debug.LogWarning("Attempted to render an interactable tile at a tile position that is already rendered!");
-#endif
-        }
-        /// <summary>
-        /// THIS METHOD SHOULD ONLY BE CALLED FROM MapRenderer2D.
-        /// Unrenders a tile at globalTilePosition.
-        /// </summary>
-        /// <param name="globalTilePosition"></param>
-        /// <param name="tile">The tile to unrender.</param>
-        public void UnrenderInteractable(TilePosition2D globalTilePosition, TileInteractable2D tile)
-        {
-            TilePosition2D localTilePosition = position.GetLocalTilePosition(globalTilePosition);
-            if (tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject != null)
-            {
-                tile.OnUnrendered(this, globalTilePosition, tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject);
-                tiles[globalTilePosition.x, globalTilePosition.z].interactableRenderObject = null;
-            }
-#if DEBUGGING
-            else
-                Debug.LogWarning("Attempted to unrender an interactable tile at a tile position that isn't already rendered!");
-#endif
         }
         
 
