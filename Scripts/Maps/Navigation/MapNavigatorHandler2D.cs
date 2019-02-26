@@ -22,10 +22,6 @@ namespace Maps.Navigation
         {
             threadIsRunning = false;
         }
-        private void Update()
-        {
-            ThreadFunc();
-        }
 
         /// <summary>
         /// The function that runs in a seperate thread.
@@ -33,7 +29,7 @@ namespace Maps.Navigation
         /// </summary>
         private static void ThreadFunc()
         {
-            //while (threadIsRunning)
+            while (threadIsRunning)
             {
                 MapNavigator2D[] navs;
                 lock (mapNavigators)

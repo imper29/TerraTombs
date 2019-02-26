@@ -93,7 +93,7 @@
             if (tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject != null)
             {
                 tile.OnUnrendered(region, globalTilePosition, tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject);
-                tiles[globalTilePosition.x, globalTilePosition.z].interactableRenderObject = null;
+                tiles[localTilePosition.x, localTilePosition.z].interactableRenderObject = null;
             }
 #if DEBUGGING
             else
