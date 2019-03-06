@@ -6,7 +6,7 @@ using UnityEngine;
 [CreateAssetMenu]
 public class Ground : TileGround2D
 {
-    public Unity.Rendering.MeshInstanceRenderer renderer, rendererGhost;
+    public Unity.Rendering.RenderMesh renderer, rendererGhost;
     public int weight;
 
     public override int GetNavigationWeight(Region2D region, TilePosition2D globalTilePosition)
@@ -39,7 +39,7 @@ public class Ground : TileGround2D
     }
     public override object OnRendered(Region2D region, TilePosition2D globalTilePosition)
     {
-        Entity e = MapRenderingHandler2D.ENTITY_MANAGER.CreateEntity(typeof(Unity.Transforms.Position), typeof(Unity.Rendering.MeshInstanceRenderer));
+        Entity e = MapRenderingHandler2D.ENTITY_MANAGER.CreateEntity(typeof(Unity.Transforms.Position), typeof(Unity.Rendering.RenderMesh));
         MapRenderingHandler2D.ENTITY_MANAGER.SetComponentData(e, new Unity.Transforms.Position()
         {
             Value = new Unity.Mathematics.float3(globalTilePosition.x + 0.5f, -0.5f, globalTilePosition.z + 0.5f)
@@ -55,7 +55,7 @@ public class Ground : TileGround2D
 
     public override object OnGhostRendered(Region2D region, TilePosition2D globalTilePosition)
     {
-        Entity e = MapRenderingHandler2D.ENTITY_MANAGER.CreateEntity(typeof(Unity.Transforms.Position), typeof(Unity.Rendering.MeshInstanceRenderer));
+        Entity e = MapRenderingHandler2D.ENTITY_MANAGER.CreateEntity(typeof(Unity.Transforms.Position), typeof(Unity.Rendering.RenderMesh));
         MapRenderingHandler2D.ENTITY_MANAGER.SetComponentData(e, new Unity.Transforms.Position()
         {
             Value = new Unity.Mathematics.float3(globalTilePosition.x + 0.5f, -0.5f, globalTilePosition.z + 0.5f)
